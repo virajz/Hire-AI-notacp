@@ -9,7 +9,193 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      candidate_achievements: {
+        Row: {
+          achievement: string
+          candidate_id: string
+          id: string
+        }
+        Insert: {
+          achievement: string
+          candidate_id: string
+          id?: string
+        }
+        Update: {
+          achievement?: string
+          candidate_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "candidate_achievements_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "candidates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      candidate_skills: {
+        Row: {
+          candidate_id: string
+          id: string
+          skill: string
+        }
+        Insert: {
+          candidate_id: string
+          id?: string
+          skill: string
+        }
+        Update: {
+          candidate_id?: string
+          id?: string
+          skill?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "candidate_skills_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "candidates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      candidate_status: {
+        Row: {
+          candidate_id: string
+          id: string
+          status: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          candidate_id: string
+          id?: string
+          status: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          candidate_id?: string
+          id?: string
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "candidate_status_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "candidates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      candidates: {
+        Row: {
+          created_at: string
+          current_title: string
+          id: string
+          location: string
+          name: string
+          raw_text: string | null
+          resume_url: string | null
+          updated_at: string
+          work_auth: string | null
+          years_exp: number | null
+        }
+        Insert: {
+          created_at?: string
+          current_title: string
+          id?: string
+          location: string
+          name: string
+          raw_text?: string | null
+          resume_url?: string | null
+          updated_at?: string
+          work_auth?: string | null
+          years_exp?: number | null
+        }
+        Update: {
+          created_at?: string
+          current_title?: string
+          id?: string
+          location?: string
+          name?: string
+          raw_text?: string | null
+          resume_url?: string | null
+          updated_at?: string
+          work_auth?: string | null
+          years_exp?: number | null
+        }
+        Relationships: []
+      }
+      email_log: {
+        Row: {
+          candidate_id: string
+          content: string | null
+          id: string
+          sent_at: string
+          template_used: string | null
+          user_id: string | null
+        }
+        Insert: {
+          candidate_id: string
+          content?: string | null
+          id?: string
+          sent_at?: string
+          template_used?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          candidate_id?: string
+          content?: string | null
+          id?: string
+          sent_at?: string
+          template_used?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_log_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "candidates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shortlists: {
+        Row: {
+          candidate_id: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          candidate_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          candidate_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shortlists_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "candidates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

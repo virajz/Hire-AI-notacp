@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Upload } from 'lucide-react';
@@ -48,10 +47,10 @@ const ResumeUploader = ({ onUploadComplete }: { onUploadComplete: () => void }) 
       }, 500);
       
     } catch (error) {
-      clearInterval();
+      // Fix: Add the interval ID parameter to clearInterval
+      setProgress(0);
       toast.error("Failed to upload resume. Please try again.");
       setIsUploading(false);
-      setProgress(0);
     }
   };
 

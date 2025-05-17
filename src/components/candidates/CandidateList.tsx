@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import CandidateCard, { CandidateProps } from './CandidateCard';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/components/ui/use-toast';
 
 interface CandidateListProps {
   searchQuery?: string;
@@ -19,8 +20,16 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
       setAnimateCards(false);
       
       try {
+        // Only fetch if there's a search query
+        if (!searchQuery) {
+          setCandidates([]);
+          setLoading(false);
+          return;
+        }
+
         // Parse the natural language query to extract key elements
         const queryTerms = parseSearchQuery(searchQuery.toLowerCase());
+        console.log("Parsed query terms:", queryTerms);
         
         // Start with a base query for all candidates
         let query = supabase
@@ -31,30 +40,34 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
             candidate_status!inner(status)
           `);
         
-        // Apply filters based on the parsed query
+        // Apply role filters (job titles)
         if (queryTerms.role.length > 0) {
-          query = query.or(
-            queryTerms.role.map(role => 
-              `current_title.ilike.%${role}%`
-            ).join(',')
-          );
+          // Create a combined filter for roles using OR conditions
+          const roleFilters = queryTerms.role.map(role => `current_title.ilike.%${role}%`);
+          query = query.or(roleFilters.join(','));
         }
         
+        // Apply skill filters
         if (queryTerms.skills.length > 0) {
           query = query.in(
             'candidate_skills.skill', 
-            queryTerms.skills.map(skill => skill)
+            queryTerms.skills
           );
         }
         
+        // Apply location filters
         if (queryTerms.location.length > 0) {
-          query = query.or(
-            queryTerms.location.map(loc => 
-              `location.ilike.%${loc}%`
-            ).join(',')
-          );
+          // Create a combined filter for locations using OR conditions
+          const locationFilters = queryTerms.location.map(loc => `location.ilike.%${loc}%`);
+          query = query.or(locationFilters.join(','));
         }
         
+        // Apply experience filters
+        if (queryTerms.experience > 0) {
+          query = query.gte('years_exp', queryTerms.experience);
+        }
+        
+        // Apply status filters
         if (queryTerms.status.length > 0) {
           query = query.in(
             'candidate_status.status',
@@ -62,15 +75,25 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
           );
         }
         
+        console.log("Executing Supabase query with filters:", queryTerms);
+        
         // Execute the query
         const { data, error } = await query;
         
         if (error) {
           console.error("Error fetching candidates:", error);
+          toast({
+            title: "Search Error",
+            description: "Failed to fetch candidates. Please try again.",
+            variant: "destructive"
+          });
           setCandidates([]);
         } else {
+          console.log("Raw query results:", data);
+          
           // Process and deduplicate candidates
           const uniqueCandidates = processAndDeduplicate(data);
+          console.log("After deduplication:", uniqueCandidates);
           
           // Format the data to match the component props
           const formattedCandidates = uniqueCandidates.map(candidate => {
@@ -81,9 +104,9 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
               location: candidate.location,
               skills: candidate.skills || [],
               status: candidate.status || 'new',
-              workAuth: candidate.work_auth || 'Unknown', // Add default value for workAuth
-              yearsExp: candidate.years_exp || 0, // Add default value for yearsExp
-              shortlisted: false // We'll set this later
+              workAuth: candidate.work_auth || 'Unknown', 
+              yearsExp: candidate.years_exp || 0,
+              shortlisted: false
             };
           });
           
@@ -91,6 +114,11 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
         }
       } catch (error) {
         console.error("Error in search:", error);
+        toast({
+          title: "Search Error",
+          description: "An unexpected error occurred while searching. Please try again.",
+          variant: "destructive"
+        });
         setCandidates([]);
       } finally {
         setLoading(false);
@@ -100,12 +128,7 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
       }
     };
 
-    // Only fetch if there's a search query
-    if (searchQuery) {
-      fetchCandidates();
-    } else {
-      setLoading(false);
-    }
+    fetchCandidates();
   }, [searchQuery]);
 
   const parseSearchQuery = (query: string) => {
@@ -113,20 +136,23 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
       role: [] as string[],
       skills: [] as string[],
       location: [] as string[],
-      status: [] as string[]
+      status: [] as string[],
+      experience: 0
     };
     
     // Common tech skills to match in queries
     const techSkills = [
       'javascript', 'typescript', 'react', 'angular', 'vue', 'node', 'python', 'django', 'flask',
       'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'terraform', 'ml', 'ai', 'machine learning',
-      'data science', 'sql', 'nosql', 'mongodb', 'postgres', 'mysql', 'graphql', 'rest'
+      'data science', 'sql', 'nosql', 'mongodb', 'postgres', 'postgresql', 'mysql', 'graphql', 'rest',
+      'go', 'golang', 'rust', 'c#', 'java', 'spring', 'ruby', 'rails', 'php', 'laravel'
     ];
     
     // Common roles
     const roles = [
       'engineer', 'developer', 'architect', 'lead', 'manager', 'designer', 'analyst',
-      'scientist', 'frontend', 'backend', 'full stack', 'devops', 'sre', 'product'
+      'scientist', 'frontend', 'backend', 'full stack', 'fullstack', 'devops', 'sre', 'product',
+      'project manager', 'software', 'data', 'ui', 'ux', 'qa', 'tester', 'security'
     ];
     
     // Status keywords
@@ -137,16 +163,28 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
       'interested': 'interested',
       'interviewing': 'interviewing',
       'in interview': 'interviewing',
-      'interview': 'interviewing'
+      'interview': 'interviewing',
+      'hired': 'hired',
+      'rejected': 'rejected'
     };
     
-    // First, check for exact matches
+    // Check for experience mentions (e.g., "5+ years", "at least 3 years")
+    const expRegex = /(\d+)(?:\+)?\s*(?:years|yrs|year)/i;
+    const expMatch = query.match(expRegex);
+    if (expMatch && expMatch[1]) {
+      result.experience = parseInt(expMatch[1], 10);
+    }
+    
+    // First, check for exact skill matches
     for (const skill of techSkills) {
       if (query.includes(skill)) {
+        result.skills.push(skill);
+      } else if (query.includes(`${skill} experience`)) {
         result.skills.push(skill);
       }
     }
     
+    // Look for roles
     for (const role of roles) {
       if (query.includes(role)) {
         result.role.push(role);
@@ -164,19 +202,32 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
     
     // Look for location mentions
     const words = query.split(' ');
-    const commonLocations = ['bangalore', 'seattle', 'austin', 'toronto', 'hyderabad', 'buenos aires'];
+    const commonLocations = [
+      'bangalore', 'seattle', 'austin', 'toronto', 'hyderabad', 'buenos aires',
+      'san francisco', 'new york', 'london', 'berlin', 'tokyo', 'singapore',
+      'remote', 'usa', 'canada', 'india', 'uk', 'australia'
+    ];
     
     for (const word of words) {
-      if (commonLocations.includes(word.toLowerCase())) {
-        result.location.push(word);
+      const cleanWord = word.replace(/[,.;]/g, '').toLowerCase();
+      if (commonLocations.includes(cleanWord)) {
+        result.location.push(cleanWord);
       }
-      
-      // Also check for "in <location>" pattern
-      const locationIndex = query.indexOf(' in ');
-      if (locationIndex !== -1) {
-        const possibleLocation = query.substring(locationIndex + 4).trim().split(' ')[0];
-        if (possibleLocation && possibleLocation.length > 2 && !result.location.includes(possibleLocation)) {
-          result.location.push(possibleLocation);
+    }
+    
+    // Also check for "in <location>" pattern
+    const locationPatterns = [
+      /\bin\s+([a-z\s]+)(?:,|\s|$)/i,
+      /\bfrom\s+([a-z\s]+)(?:,|\s|$)/i,
+      /\bat\s+([a-z\s]+)(?:,|\s|$)/i
+    ];
+    
+    for (const pattern of locationPatterns) {
+      const match = query.match(pattern);
+      if (match && match[1]) {
+        const location = match[1].trim().toLowerCase();
+        if (!result.location.includes(location)) {
+          result.location.push(location);
         }
       }
     }

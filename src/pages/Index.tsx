@@ -9,6 +9,7 @@ import ExportButton from "../components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Upload, ListFilter } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 
 const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -16,11 +17,27 @@ const Index = () => {
   const [showCandidateDetail, setShowCandidateDetail] = useState(false);
   const [activeTab, setActiveTab] = useState("search");
   const [hasSearched, setHasSearched] = useState(false);
+  const { toast } = useToast();
 
   const handleSearch = (query: string) => {
+    if (!query.trim()) {
+      toast({
+        title: "Empty Search",
+        description: "Please enter a search term to find candidates",
+        variant: "default"
+      });
+      return;
+    }
+    
     setSearchQuery(query);
     setHasSearched(true);
     setActiveTab("search");
+    
+    toast({
+      title: "Searching",
+      description: `Looking for candidates matching "${query}"`,
+      variant: "default"
+    });
   };
 
   const handleViewCandidate = (id: string) => {
@@ -31,6 +48,11 @@ const Index = () => {
   const handleUploadComplete = () => {
     // In a real app, this would refresh the candidate list
     setActiveTab("search");
+    toast({
+      title: "Upload Complete",
+      description: "Resume was successfully processed",
+      variant: "default"
+    });
   };
 
   return (
@@ -44,7 +66,7 @@ const Index = () => {
         </div>
 
         <div className="mb-8">
-          <SearchBar onSearch={handleSearch} />
+          <SearchBar onSearch={handleSearch} initialQuery={searchQuery} />
         </div>
 
         <Tabs
@@ -81,7 +103,7 @@ const Index = () => {
                 <p className="text-muted-foreground mb-6">
                   Use the search bar above to find candidates by skills, location, or job titles
                 </p>
-                <div className="flex justify-center gap-4">
+                <div className="flex justify-center gap-4 flex-wrap">
                   <Button
                     variant="outline"
                     onClick={() => setActiveTab("upload")}
@@ -90,7 +112,7 @@ const Index = () => {
                     Upload Resumes
                   </Button>
                   <Button
-                    onClick={() => handleSearch("software engineer")}
+                    onClick={() => handleSearch("software engineer with aws")}
                   >
                     Try an Example Search
                   </Button>

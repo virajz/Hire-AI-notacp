@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,6 +7,7 @@ import Index from "./pages/Index";
 import Candidates from "./pages/Candidates";
 import Shortlist from "./pages/Shortlist";
 import NotFound from "./pages/NotFound";
+import { EmailTest } from "./components/EmailTest";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +21,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/candidates" element={<Candidates />} />
           <Route path="/shortlist" element={<Shortlist />} />
+          <Route path="/test-email" element={<EmailTest />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import { parseResume } from '@/utils/resumeParser';
+import axios from 'axios';
+import { API_BASE_URL } from '@/config/environment';
 
-const ResumeUploader = ({ onUploadComplete }: { onUploadComplete: () => void }) => {
+const ResumeUploader = ({ onUploadComplete }: { onUploadComplete: (candidateData?: any) => void }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [progressInterval, setProgressInterval] = useState<NodeJS.Timeout | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -21,35 +23,59 @@ const ResumeUploader = ({ onUploadComplete }: { onUploadComplete: () => void }) 
       const interval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 90) {
-            clearInterval(interval);
+            if (progressInterval) clearInterval(progressInterval);
             return 90;
           }
           return prev + 10;
         });
       }, 300);
+      
+      setProgressInterval(interval);
 
-      // Simulate parsing the resume
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      clearInterval(interval);
+      // Prepare form data for file upload
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      // Call the API endpoint to upload and process the resume
+      const response = await axios.post(
+        '/api/resume/upload',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+      
+      if (progressInterval) clearInterval(progressInterval);
       setProgress(100);
       
-      // Parse resume (in a real app, this would call an API)
-      const parsedData = await parseResume(file);
+      // Extract candidate data from the response
+      const parsedData = response.data;
       
       // Show success toast
-      toast.success("Resume uploaded and parsed successfully");
+      toast.success(`Resume for ${parsedData.name || 'candidate'} processed successfully`);
       
-      // Call the callback
+      // Call the callback with the parsed data
       setTimeout(() => {
         setIsUploading(false);
         setProgress(0);
-        onUploadComplete();
+        onUploadComplete(parsedData);
       }, 500);
       
     } catch (error) {
-      // Fix: Add the interval ID parameter to clearInterval
+      console.error("Resume processing error:", error);
+      
+      // Clear progress interval
+      if (progressInterval) clearInterval(progressInterval);
+      setProgressInterval(null);
+      
       setProgress(0);
-      toast.error("Failed to upload resume. Please try again.");
+      toast.error(
+        axios.isAxiosError(error) && error.response?.data?.detail
+          ? error.response.data.detail
+          : "Failed to process resume. Please try again."
+      );
       setIsUploading(false);
     }
   };
@@ -59,7 +85,7 @@ const ResumeUploader = ({ onUploadComplete }: { onUploadComplete: () => void }) 
       <Upload className="h-10 w-10 text-muted-foreground mb-4" />
       <h3 className="text-lg font-medium mb-2">Upload Resumes</h3>
       <p className="text-muted-foreground text-sm mb-4 text-center">
-        Drag and drop resume files (PDF, DOC, DOCX) or click to browse
+        Drag and drop resume files (PDF) or click to browse
       </p>
 
       <div className="relative">
@@ -72,7 +98,7 @@ const ResumeUploader = ({ onUploadComplete }: { onUploadComplete: () => void }) 
           <input
             type="file"
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            accept=".pdf,.doc,.docx"
+            accept=".pdf"
             onChange={handleFileChange}
             disabled={isUploading}
           />

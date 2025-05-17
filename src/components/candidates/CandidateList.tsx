@@ -9,7 +9,7 @@ interface CandidateListProps {
 }
 
 const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps) => {
-  const [candidates, setCandidates] = useState<Omit<CandidateProps, 'onView' | 'onShortlist' | 'onStatusChange' | 'onEmail'>[]>([]);
+  const [candidates, setCandidates] = useState<Omit<CandidateProps, "onView" | "onShortlist" | "onStatusChange" | "onEmail">[]>([]);
   const [loading, setLoading] = useState(true);
   const [animateCards, setAnimateCards] = useState(false);
 
@@ -81,6 +81,8 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
               location: candidate.location,
               skills: candidate.skills || [],
               status: candidate.status || 'new',
+              workAuth: candidate.work_auth || 'Unknown', // Add default value for workAuth
+              yearsExp: candidate.years_exp || 0, // Add default value for yearsExp
               shortlisted: false // We'll set this later
             };
           });

@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import CandidateCard, { CandidateProps } from './CandidateCard';
-import { supabase } from '@/integrations/supabase/client';
+import { mockCandidates } from '@/data/mockData';
 
 interface CandidateListProps {
   searchQuery?: string;
@@ -14,202 +14,33 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
   const [animateCards, setAnimateCards] = useState(false);
 
   useEffect(() => {
-    const fetchCandidates = async () => {
-      setLoading(true);
-      setAnimateCards(false);
+    // Simulate API call with the search query
+    setLoading(true);
+    
+    setTimeout(() => {
+      // Filter candidates based on the search query (in a real app, this would be done on the server)
+      let filteredCandidates = mockCandidates;
       
-      try {
-        // Parse the natural language query to extract key elements
-        const queryTerms = parseSearchQuery(searchQuery.toLowerCase());
-        
-        // Start with a base query for all candidates
-        let query = supabase
-          .from('candidates')
-          .select(`
-            *,
-            candidate_skills!inner(skill),
-            candidate_status!inner(status)
-          `);
-        
-        // Apply filters based on the parsed query
-        if (queryTerms.role.length > 0) {
-          query = query.or(
-            queryTerms.role.map(role => 
-              `current_title.ilike.%${role}%`
-            ).join(',')
-          );
-        }
-        
-        if (queryTerms.skills.length > 0) {
-          query = query.in(
-            'candidate_skills.skill', 
-            queryTerms.skills.map(skill => skill)
-          );
-        }
-        
-        if (queryTerms.location.length > 0) {
-          query = query.or(
-            queryTerms.location.map(loc => 
-              `location.ilike.%${loc}%`
-            ).join(',')
-          );
-        }
-        
-        if (queryTerms.status.length > 0) {
-          query = query.in(
-            'candidate_status.status',
-            queryTerms.status
-          );
-        }
-        
-        // Execute the query
-        const { data, error } = await query;
-        
-        if (error) {
-          console.error("Error fetching candidates:", error);
-          setCandidates([]);
-        } else {
-          // Process and deduplicate candidates
-          const uniqueCandidates = processAndDeduplicate(data);
-          
-          // Format the data to match the component props
-          const formattedCandidates = uniqueCandidates.map(candidate => {
-            return {
-              id: candidate.id,
-              name: candidate.name,
-              currentTitle: candidate.current_title,
-              location: candidate.location,
-              skills: candidate.skills || [],
-              status: candidate.status || 'new',
-              shortlisted: false // We'll set this later
-            };
-          });
-          
-          setCandidates(formattedCandidates);
-        }
-      } catch (error) {
-        console.error("Error in search:", error);
-        setCandidates([]);
-      } finally {
-        setLoading(false);
-        setTimeout(() => {
-          setAnimateCards(true);
-        }, 100);
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        filteredCandidates = mockCandidates.filter(
+          (candidate) =>
+            candidate.name.toLowerCase().includes(query) ||
+            candidate.currentTitle.toLowerCase().includes(query) ||
+            candidate.location.toLowerCase().includes(query) ||
+            candidate.skills.some((skill) => skill.toLowerCase().includes(query))
+        );
       }
-    };
-
-    // Only fetch if there's a search query
-    if (searchQuery) {
-      fetchCandidates();
-    } else {
+      
+      setCandidates(filteredCandidates);
       setLoading(false);
-    }
+      
+      // Trigger animation after a short delay
+      setTimeout(() => {
+        setAnimateCards(true);
+      }, 100);
+    }, 600); // Simulated API delay
   }, [searchQuery]);
-
-  const parseSearchQuery = (query: string) => {
-    const result = {
-      role: [] as string[],
-      skills: [] as string[],
-      location: [] as string[],
-      status: [] as string[]
-    };
-    
-    // Common tech skills to match in queries
-    const techSkills = [
-      'javascript', 'typescript', 'react', 'angular', 'vue', 'node', 'python', 'django', 'flask',
-      'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'terraform', 'ml', 'ai', 'machine learning',
-      'data science', 'sql', 'nosql', 'mongodb', 'postgres', 'mysql', 'graphql', 'rest'
-    ];
-    
-    // Common roles
-    const roles = [
-      'engineer', 'developer', 'architect', 'lead', 'manager', 'designer', 'analyst',
-      'scientist', 'frontend', 'backend', 'full stack', 'devops', 'sre', 'product'
-    ];
-    
-    // Status keywords
-    const statusMap: Record<string, string> = {
-      'new': 'new',
-      'contacted': 'contacted',
-      'reached out': 'contacted',
-      'interested': 'interested',
-      'interviewing': 'interviewing',
-      'in interview': 'interviewing',
-      'interview': 'interviewing'
-    };
-    
-    // First, check for exact matches
-    for (const skill of techSkills) {
-      if (query.includes(skill)) {
-        result.skills.push(skill);
-      }
-    }
-    
-    for (const role of roles) {
-      if (query.includes(role)) {
-        result.role.push(role);
-      }
-    }
-    
-    // Look for status mentions
-    for (const [keyword, status] of Object.entries(statusMap)) {
-      if (query.includes(keyword)) {
-        if (!result.status.includes(status)) {
-          result.status.push(status);
-        }
-      }
-    }
-    
-    // Look for location mentions
-    const words = query.split(' ');
-    const commonLocations = ['bangalore', 'seattle', 'austin', 'toronto', 'hyderabad', 'buenos aires'];
-    
-    for (const word of words) {
-      if (commonLocations.includes(word.toLowerCase())) {
-        result.location.push(word);
-      }
-      
-      // Also check for "in <location>" pattern
-      const locationIndex = query.indexOf(' in ');
-      if (locationIndex !== -1) {
-        const possibleLocation = query.substring(locationIndex + 4).trim().split(' ')[0];
-        if (possibleLocation && possibleLocation.length > 2 && !result.location.includes(possibleLocation)) {
-          result.location.push(possibleLocation);
-        }
-      }
-    }
-    
-    return result;
-  };
-
-  const processAndDeduplicate = (data: any[]) => {
-    // Create a Map to store unique candidates with their skills
-    const candidateMap = new Map();
-    
-    for (const item of data) {
-      const candidateId = item.id;
-      
-      if (!candidateMap.has(candidateId)) {
-        // Initialize the candidate with their data
-        candidateMap.set(candidateId, {
-          ...item,
-          skills: [],
-          status: item.candidate_status?.[0]?.status || 'new'
-        });
-      }
-      
-      // Add the skill if it's not already in the list
-      const candidate = candidateMap.get(candidateId);
-      const skill = item.candidate_skills?.skill;
-      
-      if (skill && !candidate.skills.includes(skill)) {
-        candidate.skills.push(skill);
-      }
-    }
-    
-    // Convert the Map back to an array
-    return Array.from(candidateMap.values());
-  };
 
   const handleShortlist = (id: string) => {
     setCandidates((prev) =>
@@ -230,6 +61,7 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
   };
 
   const handleEmail = (id: string) => {
+    // Open email composer in drawer or modal
     console.log(`Open email composer for candidate ${id}`);
     onViewCandidate(id);
   };

@@ -2,7 +2,6 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Search } from 'lucide-react';
-import { Input } from '@/components/ui/input';
 
 interface SearchBarProps {
   onSearch: (query: string) => void;
@@ -18,24 +17,17 @@ const SearchBar = ({ onSearch, initialQuery = '' }: SearchBarProps) => {
     onSearch(query);
   };
 
-  const exampleQueries = [
-    'aws engineer in bangalore',
-    'frontend developers with react experience',
-    'data scientists with machine learning',
-    'product managers in Toronto'
-  ];
-
   return (
-    <div className="w-full max-w-3xl mx-auto">
+    <div className={`search-bar-container w-full max-w-3xl mx-auto ${isFocused ? 'focused' : ''}`}>
       <form onSubmit={handleSubmit} className="relative">
-        <Input
+        <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          placeholder="Search using natural language (e.g., 'aws engineer in bangalore')..."
-          className="w-full px-4 py-6 pr-12 rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-highlight text-lg"
+          placeholder="Search candidates (e.g., 'aws engineer in bangalore')..."
+          className="w-full px-4 py-3 pr-12 rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-highlight text-lg"
         />
         <Button 
           type="submit" 
@@ -45,28 +37,6 @@ const SearchBar = ({ onSearch, initialQuery = '' }: SearchBarProps) => {
           <span className="ml-2 hidden sm:inline">Search</span>
         </Button>
       </form>
-      
-      {isFocused && (
-        <div className="mt-2 text-sm text-muted-foreground">
-          <p className="mb-1">Try searching for:</p>
-          <div className="flex flex-wrap gap-2">
-            {exampleQueries.map((example, index) => (
-              <Button
-                key={index}
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => {
-                  setQuery(example);
-                  onSearch(example);
-                }}
-              >
-                {example}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

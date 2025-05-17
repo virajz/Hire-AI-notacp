@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import SearchBar from "../components/search/SearchBar";
@@ -8,7 +7,7 @@ import ResumeUploader from "../components/resume/ResumeUploader";
 import ExportButton from "../components/export/ExportButton";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Upload, ListFilter } from "lucide-react";
+import { Upload, Search } from "lucide-react";
 
 const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -28,6 +27,11 @@ const Index = () => {
     setShowCandidateDetail(true);
   };
 
+  const handleStatusChange = (id: string, status: string) => {
+    // In a real app, this would update the backend
+    console.log('Update status:', id, status);
+  };
+
   const handleUploadComplete = () => {
     // In a real app, this would refresh the candidate list
     setActiveTab("search");
@@ -36,73 +40,37 @@ const Index = () => {
   return (
     <MainLayout>
       <div className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">HireAI</h1>
-          <p className="text-muted-foreground">
-            AI-powered candidate search and outreach
-          </p>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">AI Recruit Copilot</h1>
+          <ExportButton />
         </div>
 
-        <div className="mb-8">
-          <SearchBar onSearch={handleSearch} />
-        </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
+          <TabsList>
+            <TabsTrigger value="search">
+              <Search className="h-4 w-4 mr-2" />
+              Search
+            </TabsTrigger>
+            <TabsTrigger value="upload">
+              <Upload className="h-4 w-4 mr-2" />
+              Upload Resume
+            </TabsTrigger>
+          </TabsList>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="mt-6"
-        >
-          <div className="flex justify-between items-center mb-4">
-            <TabsList>
-              <TabsTrigger value="search">
-                <ListFilter className="h-4 w-4 mr-1" />
-                Search Results
-              </TabsTrigger>
-              <TabsTrigger value="upload">
-                <Upload className="h-4 w-4 mr-1" />
-                Upload
-              </TabsTrigger>
-            </TabsList>
-
-            {activeTab === "search" && hasSearched && <ExportButton />}
-          </div>
-
-          <TabsContent value="search" className="mt-2">
-            {hasSearched ? (
-              <CandidateList
-                searchQuery={searchQuery}
-                onViewCandidate={handleViewCandidate}
-              />
-            ) : (
-              <div className="text-center py-12">
-                <h3 className="text-lg font-medium mb-2">
-                  Start searching for candidates
-                </h3>
-                <p className="text-muted-foreground mb-6">
-                  Use the search bar above to find candidates by skills, location, or job titles
-                </p>
-                <div className="flex justify-center gap-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => setActiveTab("upload")}
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload Resumes
-                  </Button>
-                  <Button
-                    onClick={() => handleSearch("software engineer")}
-                  >
-                    Try an Example Search
-                  </Button>
-                </div>
-              </div>
-            )}
+          <TabsContent value="search">
+            <div className="space-y-4">
+              <SearchBar onSearch={handleSearch} />
+              {hasSearched && (
+                <CandidateList
+                  searchQuery={searchQuery}
+                  onViewCandidate={handleViewCandidate}
+                />
+              )}
+            </div>
           </TabsContent>
 
-          <TabsContent value="upload" className="mt-2">
-            <div className="max-w-xl mx-auto">
-              <ResumeUploader onUploadComplete={handleUploadComplete} />
-            </div>
+          <TabsContent value="upload">
+            <ResumeUploader onUploadComplete={handleUploadComplete} />
           </TabsContent>
         </Tabs>
       </div>
@@ -111,6 +79,7 @@ const Index = () => {
         candidateId={selectedCandidateId}
         open={showCandidateDetail}
         onClose={() => setShowCandidateDetail(false)}
+        onStatusChange={handleStatusChange}
       />
     </MainLayout>
   );

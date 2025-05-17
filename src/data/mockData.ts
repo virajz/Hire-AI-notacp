@@ -1,4 +1,3 @@
-
 export const mockCandidates = [
   {
     id: '1',
@@ -100,6 +99,142 @@ export const mockCandidates = [
       'Built an e-commerce platform that processes $2M annually',
       'Reduced API latency by 70% through query optimization',
       'Contributing maintainer to popular open source libraries'
+    ]
+  },
+  {
+    id: '13',
+    name: 'Lucas Oliveira',
+    currentTitle: 'Blockchain Developer',
+    location: 'São Paulo, Brazil',
+    workAuth: 'Work Visa Required',
+    yearsExp: 4,
+    skills: ['Solidity', 'Ethereum', 'Web3.js', 'Smart Contracts', 'Rust', 'DeFi'],
+    shortlisted: false,
+    status: 'new' as const,
+    aiSummary: 'Lucas is a blockchain specialist with experience in DeFi and smart contract development. His work on decentralized applications and security-focused development makes him a strong candidate for blockchain roles. He has contributed to several open-source blockchain projects.',
+    achievements: [
+      'Developed DeFi protocol with $50M TVL',
+      'Audited smart contracts for major crypto projects',
+      'Created security-focused smart contract library'
+    ]
+  },
+  {
+    id: '14',
+    name: 'Yuki Nakamura',
+    currentTitle: 'Game Developer',
+    location: 'Osaka, Japan',
+    workAuth: 'Work Visa Required',
+    yearsExp: 6,
+    skills: ['Unity', 'C#', 'Unreal Engine', '3D Graphics', 'Game Physics', 'VR/AR'],
+    shortlisted: false,
+    status: 'interested' as const,
+    aiSummary: 'Yuki brings 6 years of experience in game development with expertise in both Unity and Unreal Engine. Her work on mobile and VR games demonstrates her versatility and technical depth. She has a strong background in performance optimization and graphics programming.',
+    achievements: [
+      'Developed mobile game with 5M+ downloads',
+      'Optimized VR game performance by 40%',
+      'Created reusable game engine components'
+    ]
+  },
+  {
+    id: '15',
+    name: 'Fatima Al-Mansouri',
+    currentTitle: 'Data Engineer',
+    location: 'Dubai, UAE',
+    workAuth: 'Work Visa Required',
+    yearsExp: 5,
+    skills: ['Apache Spark', 'Airflow', 'Python', 'SQL', 'Data Warehousing', 'ETL'],
+    shortlisted: true,
+    status: 'contacted' as const,
+    aiSummary: 'Fatima specializes in building scalable data pipelines and data warehouses. Her experience with big data technologies and ETL processes makes her an excellent fit for data engineering roles. She has successfully implemented data solutions for enterprise clients.',
+    achievements: [
+      'Built data pipeline processing 1TB daily',
+      'Reduced ETL job runtime by 60%',
+      'Implemented real-time analytics system'
+    ]
+  },
+  {
+    id: '16',
+    name: 'Marcus Johnson',
+    currentTitle: 'Site Reliability Engineer',
+    location: 'Chicago, IL',
+    workAuth: 'US Citizen',
+    yearsExp: 7,
+    skills: ['Kubernetes', 'Prometheus', 'Grafana', 'Terraform', 'Go', 'Incident Response'],
+    shortlisted: false,
+    status: 'interviewing' as const,
+    aiSummary: 'Marcus is an experienced SRE with a focus on building reliable and scalable infrastructure. His expertise in monitoring, automation, and incident response makes him a strong candidate for SRE roles. He has improved system reliability and reduced incident response time in previous positions.',
+    achievements: [
+      'Reduced system downtime by 99.9%',
+      'Automated 80% of operational tasks',
+      'Led incident response team during major outages'
+    ]
+  },
+  {
+    id: '17',
+    name: 'Aisha Rahman',
+    currentTitle: 'Technical Product Manager',
+    location: 'Karachi, Pakistan',
+    workAuth: 'Work Visa Required',
+    yearsExp: 6,
+    skills: ['Product Strategy', 'Technical Architecture', 'Agile', 'Data Analytics', 'API Design', 'Cloud Services'],
+    shortlisted: false,
+    status: 'new' as const,
+    aiSummary: 'Aisha combines technical expertise with product management skills. Her experience in leading technical product teams and working with engineering teams makes her an excellent fit for technical product roles. She has successfully launched several enterprise products.',
+    achievements: [
+      'Led development of enterprise API platform',
+      'Increased product adoption by 200%',
+      'Reduced time-to-market by 40%'
+    ]
+  },
+  {
+    id: '18',
+    name: 'Carlos Mendoza',
+    currentTitle: 'Cloud Solutions Architect',
+    location: 'Mexico City, Mexico',
+    workAuth: 'Work Visa Required',
+    yearsExp: 8,
+    skills: ['AWS', 'Azure', 'GCP', 'Cloud Architecture', 'Serverless', 'DevOps'],
+    shortlisted: true,
+    status: 'contacted' as const,
+    aiSummary: 'Carlos is a cloud architecture expert with experience across major cloud providers. His work on enterprise cloud migrations and serverless architectures makes him a strong candidate for cloud architecture roles. He has helped organizations optimize their cloud infrastructure.',
+    achievements: [
+      'Led cloud migration saving $2M annually',
+      'Designed multi-cloud architecture for global enterprise',
+      'AWS Certified Solutions Architect - Professional'
+    ]
+  },
+  {
+    id: '19',
+    name: 'Sophie Dubois',
+    currentTitle: 'AI Research Engineer',
+    location: 'Paris, France',
+    workAuth: 'EU Citizen',
+    yearsExp: 5,
+    skills: ['Deep Learning', 'PyTorch', 'TensorFlow', 'Research', 'NLP', 'Computer Vision'],
+    shortlisted: false,
+    status: 'interested' as const,
+    aiSummary: 'Sophie combines research expertise with practical engineering skills. Her work in deep learning and natural language processing makes her an excellent fit for AI research roles. She has published papers in top AI conferences and implemented research findings in production systems.',
+    achievements: [
+      'Published research at ICML 2023',
+      'Developed state-of-the-art NLP model',
+      'Led AI research team at tech startup'
+    ]
+  },
+  {
+    id: '20',
+    name: 'Kwame Osei',
+    currentTitle: 'Backend Team Lead',
+    location: 'Accra, Ghana',
+    workAuth: 'Work Visa Required',
+    yearsExp: 7,
+    skills: ['Java', 'Spring Boot', 'Microservices', 'Kafka', 'PostgreSQL', 'Team Leadership'],
+    shortlisted: false,
+    status: 'new' as const,
+    aiSummary: 'Kwame is an experienced backend developer and team lead with expertise in building scalable microservices. His leadership experience and technical depth make him a strong candidate for backend team lead roles. He has successfully led teams in delivering complex backend systems.',
+    achievements: [
+      'Led team of 8 engineers in microservices migration',
+      'Improved system performance by 300%',
+      'Mentored 5 junior developers to senior level'
     ]
   }
 ];

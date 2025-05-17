@@ -1,6 +1,6 @@
-
 import { useState, useEffect } from 'react';
 import CandidateCard, { CandidateProps } from './CandidateCard';
+import CandidateCardSkeleton from './CandidateCardSkeleton';
 import { mockCandidates } from '@/data/mockData';
 
 interface CandidateListProps {
@@ -11,35 +11,62 @@ interface CandidateListProps {
 const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps) => {
   const [candidates, setCandidates] = useState<Omit<CandidateProps, 'onView' | 'onShortlist' | 'onStatusChange' | 'onEmail'>[]>([]);
   const [loading, setLoading] = useState(true);
-  const [animateCards, setAnimateCards] = useState(false);
+  const [animationPhase, setAnimationPhase] = useState<'stack' | 'shuffle' | 'none'>('none');
 
   useEffect(() => {
-    // Simulate API call with the search query
     setLoading(true);
+    setAnimationPhase('none');
     
+    // Simulate API call with the search query
     setTimeout(() => {
-      // Filter candidates based on the search query (in a real app, this would be done on the server)
+      // Filter candidates based on the search query
       let filteredCandidates = mockCandidates;
       
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        filteredCandidates = mockCandidates.filter(
-          (candidate) =>
-            candidate.name.toLowerCase().includes(query) ||
-            candidate.currentTitle.toLowerCase().includes(query) ||
-            candidate.location.toLowerCase().includes(query) ||
-            candidate.skills.some((skill) => skill.toLowerCase().includes(query))
-        );
+        
+        // Extract location and skills from the query
+        const locationMatch = query.match(/(?:in|from|at)\s+([a-zA-Z\s]+)/i);
+        const location = locationMatch ? locationMatch[1].trim() : '';
+        
+        // Extract skills (assuming they're mentioned before "in" or at the start)
+        const skillsMatch = query.match(/^([^in]+)/i);
+        const skills = skillsMatch ? skillsMatch[1].trim().split(/\s+/) : [];
+        
+        filteredCandidates = mockCandidates.filter((candidate) => {
+          // Check location if specified
+          const locationMatch = !location || 
+            candidate.location.toLowerCase().includes(location.toLowerCase());
+          
+          // Check skills if specified
+          const skillsMatch = skills.length === 0 || 
+            skills.some(skill => 
+              candidate.skills.some(candidateSkill => 
+                candidateSkill.toLowerCase().includes(skill.toLowerCase())
+              )
+            );
+          
+          // Check title for engineer/developer roles if skills are specified
+          const titleMatch = skills.length === 0 || 
+            candidate.currentTitle.toLowerCase().includes('engineer') ||
+            candidate.currentTitle.toLowerCase().includes('developer') ||
+            candidate.currentTitle.toLowerCase().includes('architect');
+          
+          return locationMatch && skillsMatch && titleMatch;
+        });
       }
       
       setCandidates(filteredCandidates);
       setLoading(false);
       
-      // Trigger animation after a short delay
+      // Trigger stack animation first
+      setAnimationPhase('stack');
+      
+      // Then trigger shuffle animation after stack completes
       setTimeout(() => {
-        setAnimateCards(true);
-      }, 100);
-    }, 600); // Simulated API delay
+        setAnimationPhase('shuffle');
+      }, 300);
+    }, 600);
   }, [searchQuery]);
 
   const handleShortlist = (id: string) => {
@@ -61,18 +88,22 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
   };
 
   const handleEmail = (id: string) => {
-    // Open email composer in drawer or modal
     console.log(`Open email composer for candidate ${id}`);
     onViewCandidate(id);
   };
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center py-12">
-        <div className="animate-pulse space-y-2 text-center">
-          <div className="h-6 w-32 bg-gray-200 rounded mx-auto"></div>
-          <p className="text-muted-foreground">Searching for candidates...</p>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[...Array(6)].map((_, index) => (
+          <div
+            key={index}
+            className="animate-card-stack"
+            style={{ animationDelay: `${index * 0.05}s` }}
+          >
+            <CandidateCardSkeleton />
+          </div>
+        ))}
       </div>
     );
   }
@@ -91,7 +122,13 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
       {candidates.map((candidate, index) => (
         <div
           key={candidate.id}
-          className={`${animateCards ? 'animate-card-shuffle' : 'opacity-0'}`}
+          className={`${
+            animationPhase === 'stack'
+              ? 'animate-card-stack'
+              : animationPhase === 'shuffle'
+              ? 'animate-card-shuffle'
+              : ''
+          }`}
           style={{ animationDelay: `${index * 0.05}s` }}
         >
           <CandidateCard

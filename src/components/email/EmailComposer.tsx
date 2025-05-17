@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,9 +10,10 @@ interface EmailComposerProps {
   candidate: Omit<CandidateProps, 'onView' | 'onShortlist' | 'onStatusChange' | 'onEmail'>;
   onBack: () => void;
   onSend: () => void;
+  onStatusChange?: (id: string, status: string) => void;
 }
 
-const EmailComposer = ({ candidate, onBack, onSend }: EmailComposerProps) => {
+const EmailComposer = ({ candidate, onBack, onSend, onStatusChange }: EmailComposerProps) => {
   const [emailTemplate, setEmailTemplate] = useState("software-engineer");
   const [email, setEmail] = useState(generateEmailTemplate(candidate, emailTemplate));
   const [subject, setSubject] = useState(`Opportunity for ${candidate.name} at TechCo`);
@@ -31,6 +31,10 @@ const EmailComposer = ({ candidate, onBack, onSend }: EmailComposerProps) => {
     // Simulate sending the email
     setTimeout(() => {
       setSending(false);
+      // Update candidate status to "contacted" after successful email send
+      if (onStatusChange) {
+        onStatusChange(candidate.id, 'contacted');
+      }
       onSend();
     }, 1500);
   };

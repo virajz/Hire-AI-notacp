@@ -26,6 +26,7 @@ interface CandidateActionsProps {
   };
   roleTitle: string;
   companyName: string;
+  onStatusChange?: (id: string, status: string) => void;
 }
 
 export const CandidateActions: React.FC<CandidateActionsProps> = ({
@@ -33,6 +34,7 @@ export const CandidateActions: React.FC<CandidateActionsProps> = ({
   selectedCandidate,
   roleTitle,
   companyName,
+  onStatusChange,
 }) => {
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
   const [emailContent, setEmailContent] = useState('');
@@ -60,6 +62,9 @@ export const CandidateActions: React.FC<CandidateActionsProps> = ({
       if (result.success) {
         toast.success('Email sent successfully!');
         setIsEmailDialogOpen(false);
+        if (onStatusChange) {
+          onStatusChange(selectedCandidate.id, 'contacted');
+        }
       } else {
         toast.error('Failed to send email. Please try again.');
       }

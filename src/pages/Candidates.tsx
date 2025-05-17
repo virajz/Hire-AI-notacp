@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import CandidateList from "../components/candidates/CandidateList";
@@ -24,6 +23,11 @@ const Candidates = () => {
   const handleViewCandidate = (id: string) => {
     setSelectedCandidateId(id);
     setShowCandidateDetail(true);
+  };
+
+  const handleStatusChange = (id: string, status: string) => {
+    // In a real app, this would update the backend
+    console.log('Update status:', id, status);
   };
 
   return (
@@ -74,6 +78,7 @@ const Candidates = () => {
         candidateId={selectedCandidateId}
         open={showCandidateDetail}
         onClose={() => setShowCandidateDetail(false)}
+        onStatusChange={handleStatusChange}
       />
     </MainLayout>
   );

@@ -1,4 +1,3 @@
-
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,9 +11,10 @@ interface CandidateDetailProps {
   candidateId: string | null;
   open: boolean;
   onClose: () => void;
+  onStatusChange?: (id: string, status: string) => void;
 }
 
-const CandidateDetail = ({ candidateId, open, onClose }: CandidateDetailProps) => {
+const CandidateDetail = ({ candidateId, open, onClose, onStatusChange }: CandidateDetailProps) => {
   const [showingEmail, setShowingEmail] = useState(false);
   
   // Find the candidate in our mock data
@@ -58,6 +58,7 @@ const CandidateDetail = ({ candidateId, open, onClose }: CandidateDetailProps) =
               setShowingEmail(false);
               onClose();
             }}
+            onStatusChange={onStatusChange}
           />
         ) : (
           <>

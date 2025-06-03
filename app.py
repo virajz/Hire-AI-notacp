@@ -1,4 +1,26 @@
 import os
+import nltk # Make sure nltk is imported early
+
+# --- BEGIN NLTK Path Configuration ---
+# Construct the absolute path to your custom NLTK data directory
+# RENDER_PROJECT_ROOT is typically /opt/render/project/src on Render
+# If running locally and RENDER_PROJECT_ROOT is not set, it defaults to the current working directory.
+project_root = os.environ.get('RENDER_PROJECT_ROOT', os.getcwd())
+custom_nltk_data_path = os.path.join(project_root, "nltk_data_local")
+
+# Check if the custom path exists (it should if build.sh ran correctly)
+if os.path.exists(custom_nltk_data_path):
+    # Prepend your custom path to NLTK's data path list
+    # This makes NLTK look here first.
+    if custom_nltk_data_path not in nltk.data.path:
+        nltk.data.path.insert(0, custom_nltk_data_path)
+    print(f"Successfully added custom NLTK data path: {custom_nltk_data_path}")
+    print(f"NLTK search paths (runtime): {nltk.data.path}")
+else:
+    print(f"Custom NLTK data path not found: {custom_nltk_data_path}. NLTK will use default paths.")
+    print(f"NLTK search paths (runtime, default): {nltk.data.path}")
+# --- END NLTK Path Configuration ---
+
 import base64
 import tempfile
 from typing import List, Dict, Any, Optional
@@ -26,7 +48,7 @@ load_dotenv()
 SUPABASE_URL = os.getenv("VITE_SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("VITE_SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY") # Add Groq API Key for summaries
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") # Ensure this is set in your backend environment
 
 # Check for required environment variables
 if not all([SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY]):
@@ -47,7 +69,7 @@ app = FastAPI(title="HireAI API", description="API for HireAI resume search and 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://localhost:5173"],  # Add both Vite default ports
+    allow_origins=["http://localhost:8080", "http://localhost:5173", "https://hire-ai-notacp.vercel.app/"],  # Add both Vite default ports
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -371,62 +393,49 @@ async def upload_resume(
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing resume: {str(e)}")
 
-async def generate_text_summary_with_groq(text_to_summarize: str) -> Optional[str]:
-    if not GROQ_API_KEY:
-        print("GROQ_API_KEY not configured for backend summary generation.")
+async def generate_text_summary_with_gemini(text_to_summarize: str) -> Optional[str]:
+    if not GEMINI_API_KEY:
+        print("GEMINI_API_KEY not configured for backend summary generation.")
         return None
     
-    groq_api_url = "https://api.groq.com/openai/v1/chat/completions"
+    # This is a generic endpoint, replace with the actual one for your Gemini model
+    # e.g., "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+    gemini_api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
     
-    # Limit input text length to avoid exceeding model context or API limits
-    # Llama3-8b has an 8192 token context, but keep input reasonable for a summary task.
-    # Approx 4 chars per token, so 4000 chars is ~1000 tokens.
-    max_input_chars = 6000 # Increased slightly for potentially longer relevant sections
-    truncated_text = text_to_summarize[:max_input_chars]
-
-    prompt = f"Summarize the following resume text, focusing on key skills, experience, and overall fit. Provide a concise summary suitable for a recruiter (around 100-150 words): \n\n{truncated_text}"
+    # Construct the prompt carefully
+    prompt = f"Summarize the following resume text, focusing on key skills, experience, and overall fit. Provide a concise summary suitable for a recruiter: \n\n{text_to_summarize[:4000]}" # Limit input text length
     
     payload = {
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "model": "llama3-8b-8192", # Common Groq model, adjust if needed
-        "temperature": 0.5,
-        "max_tokens": 250, # Max tokens for the summary output
-        "top_p": 1,
-        "stop": None,
-        "stream": False
-    }
-    
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
+        "contents": [{
+            "parts": [{
+                "text": prompt
+            }]
+        }],
+        "generationConfig": {
+            "temperature": 0.5,
+            "maxOutputTokens": 250,
+        }
     }
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            response = await client.post(groq_api_url, json=payload, headers=headers)
+            response = await client.post(gemini_api_url, json=payload)
             response.raise_for_status() # Raise an exception for HTTP errors
             result = response.json()
             
-            if result.get("choices") and len(result["choices"]) > 0:
-                summary = result["choices"][0].get("message", {}).get("content")
-                if summary:
-                    return summary.strip()
-                else:
-                    print(f"Groq API response missing summary content: {result}")
-                    return None
+            # Extract the summary text - structure depends on Gemini API response
+            # This is a common pattern, adjust if needed:
+            if result.get("candidates") and result["candidates"][0].get("content") and result["candidates"][0]["content"].get("parts"):
+                summary = result["candidates"][0]["content"]["parts"][0]["text"]
+                return summary.strip()
             else:
-                print(f"Unexpected Groq API response structure: {result}")
+                print(f"Unexpected Gemini API response structure: {result}")
                 return None
         except httpx.HTTPStatusError as e:
-            print(f"Groq API HTTP error: {e.response.status_code} - {e.response.text}")
+            print(f"Gemini API HTTP error: {e.response.status_code} - {e.response.text}")
             return None
         except Exception as e:
-            print(f"Error calling Groq API: {str(e)}")
+            print(f"Error calling Gemini API: {str(e)}")
             return None
 
 @app.post("/api/candidate/{candidate_id}/generate_summary", response_model=AISummaryResponse)
@@ -457,10 +466,10 @@ async def generate_ai_summary(candidate_id: str):
     if not raw_text:
         raise HTTPException(status_code=404, detail="Raw text not found for candidate")
 
-    # 2. Generate summary with Groq
-    generated_summary = await generate_text_summary_with_groq(raw_text)
+    # 2. Generate summary with Gemini
+    generated_summary = await generate_text_summary_with_gemini(raw_text)
     if not generated_summary:
-        raise HTTPException(status_code=500, detail="Failed to generate AI summary using Groq") # Updated error message
+        raise HTTPException(status_code=500, detail="Failed to generate AI summary")
 
     # 3. Update ai_summary in Supabase
     update_url = f"{SUPABASE_URL}/rest/v1/candidates?id=eq.{candidate_id}"

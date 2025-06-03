@@ -11,4 +11,3 @@ python-dateutil==2.8.2
 PyPDF2
 pyresparser
 nltk
-stopwords

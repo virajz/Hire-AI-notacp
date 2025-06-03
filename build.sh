@@ -28,3 +28,16 @@ python download_nltk_data.py
 echo "NLTK data download script finished."
 
 echo "Build process complete."
+
+# New file: download_nltk_data.py
+import nltk
+import os
+
+# Set NLTK data path to match build environment
+nltk_data_path = os.environ.get("NLTK_DATA", "./nltk_data_local")
+nltk.data.path.append(nltk_data_path)
+
+nltk.download('stopwords', download_dir=nltk_data_path)
+nltk.download('punkt', download_dir=nltk_data_path)
+nltk.download('wordnet', download_dir=nltk_data_path)
+nltk.download('averaged_perceptron_tagger', download_dir=nltk_data_path)

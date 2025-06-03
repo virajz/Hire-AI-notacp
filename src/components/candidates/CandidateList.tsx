@@ -1,72 +1,59 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import CandidateCard, { CandidateProps } from './CandidateCard';
 import CandidateCardSkeleton from './CandidateCardSkeleton';
-import { mockCandidates } from '@/data/mockData';
+import { supabase } from '@/integrations/supabase/client';
 
 interface CandidateListProps {
   searchQuery?: string;
   onViewCandidate: (id: string) => void;
 }
 
-const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps) => {
+const CandidateList: React.FC<CandidateListProps> = ({ searchQuery = '', onViewCandidate }) => {
   const [candidates, setCandidates] = useState<Omit<CandidateProps, 'onView' | 'onShortlist' | 'onStatusChange' | 'onEmail'>[]>([]);
   const [loading, setLoading] = useState(true);
-  const [animationPhase, setAnimationPhase] = useState<'stack' | 'shuffle' | 'none'>('none');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setLoading(true);
-    setAnimationPhase('none');
-    
-    // Simulate API call with the search query
-    setTimeout(() => {
-      // Filter candidates based on the search query
-      let filteredCandidates = mockCandidates;
-      
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        
-        // Extract location and skills from the query
-        const locationMatch = query.match(/(?:in|from|at)\s+([a-zA-Z\s]+)/i);
-        const location = locationMatch ? locationMatch[1].trim() : '';
-        
-        // Extract skills (assuming they're mentioned before "in" or at the start)
-        const skillsMatch = query.match(/^([^in]+)/i);
-        const skills = skillsMatch ? skillsMatch[1].trim().split(/\s+/) : [];
-        
-        filteredCandidates = mockCandidates.filter((candidate) => {
-          // Check location if specified
-          const locationMatch = !location || 
-            candidate.location.toLowerCase().includes(location.toLowerCase());
-          
-          // Check skills if specified
-          const skillsMatch = skills.length === 0 || 
-            skills.some(skill => 
-              candidate.skills.some(candidateSkill => 
-                candidateSkill.toLowerCase().includes(skill.toLowerCase())
-              )
-            );
-          
-          // Check title for engineer/developer roles if skills are specified
-          const titleMatch = skills.length === 0 || 
-            candidate.currentTitle.toLowerCase().includes('engineer') ||
-            candidate.currentTitle.toLowerCase().includes('developer') ||
-            candidate.currentTitle.toLowerCase().includes('architect');
-          
-          return locationMatch && skillsMatch && titleMatch;
-        });
+    const fetchCandidates = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        let queryBuilder = supabase.from('candidates').select('*');
+
+        if (searchQuery) {
+          queryBuilder = queryBuilder.ilike('name', `%${searchQuery}%`);
+        }
+
+        const { data: supabaseData, error: supabaseError } = await queryBuilder;
+
+        if (supabaseError) {
+          throw supabaseError;
+        }
+
+        const formattedCandidates = supabaseData ? supabaseData.map(candidate => ({
+          id: candidate.id,
+          name: candidate.name,
+          currentTitle: candidate.current_title,
+          location: candidate.location,
+          workAuth: candidate.work_auth,
+          yearsExp: candidate.years_exp,
+          skills: [], // Default to empty array as 'skills' does not exist on fetched type
+          shortlisted: false, // Default to false as 'shortlisted' does not exist on fetched type
+          status: 'new' as CandidateProps['status'], // Default to 'new' and cast to specific type
+        })) : [];
+
+        setCandidates(formattedCandidates);
+      } catch (err: any) {
+        console.error("Error fetching candidates:", err);
+        setError(err.message || 'Failed to fetch candidates');
+        setCandidates([]); // Clear candidates on error
+      } finally {
+        setLoading(false);
       }
-      
-      setCandidates(filteredCandidates);
-      setLoading(false);
-      
-      // Trigger stack animation first
-      setAnimationPhase('stack');
-      
-      // Then trigger shuffle animation after stack completes
-      setTimeout(() => {
-        setAnimationPhase('shuffle');
-      }, 300);
-    }, 600);
+    };
+
+    fetchCandidates();
   }, [searchQuery]);
 
   const handleShortlist = (id: string) => {
@@ -99,11 +86,21 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
           <div
             key={index}
             className="animate-card-stack"
-            style={{ animationDelay: `${index * 0.05}s` }}
+            style={{ animationDelay: `${index * 100}ms` }}
           >
             <CandidateCardSkeleton />
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (error) { // Display error message if an error occurred
+    return (
+      <div className="text-center py-12">
+        <h3 className="text-lg font-medium text-red-600">Error loading candidates</h3>
+        <p className="text-muted-foreground mt-1">{error}</p>
+        <p className="text-muted-foreground mt-1">Please check the console for more details and ensure your Supabase connection is configured correctly.</p>
       </div>
     );
   }
@@ -118,29 +115,41 @@ const CandidateList = ({ searchQuery = '', onViewCandidate }: CandidateListProps
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {candidates.map((candidate, index) => (
-        <div
-          key={candidate.id}
-          className={`${
-            animationPhase === 'stack'
-              ? 'animate-card-stack'
-              : animationPhase === 'shuffle'
-              ? 'animate-card-shuffle'
-              : ''
-          }`}
-          style={{ animationDelay: `${index * 0.05}s` }}
-        >
-          <CandidateCard
-            {...candidate}
-            onView={onViewCandidate}
-            onShortlist={handleShortlist}
-            onStatusChange={handleStatusChange}
-            onEmail={handleEmail}
-          />
-        </div>
-      ))}
-    </div>
+    <>
+      {/* <style jsx global>{`
+        @keyframes stackAndFan {
+          0% {
+            transform: scale(0.95) translateY(40px) rotate(-3deg);
+            opacity: 0;
+          }
+          100% {
+            transform: scale(1) translateY(0) rotate(0);
+            opacity: 1;
+          }
+        }
+        .animate-card-stack {
+          animation: stackAndFan 0.5s ease-out forwards;
+        }
+      `}</style> */}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {candidates.map((candidate, index) => (
+          <div
+            key={candidate.id}
+            className="animate-card-stack"
+            style={{ animationDelay: `${index * 100}ms` }}
+          >
+            <CandidateCard
+              {...candidate}
+              onView={onViewCandidate}
+              onShortlist={handleShortlist}
+              onStatusChange={handleStatusChange}
+              onEmail={handleEmail}
+            />
+          </div>
+        ))}
+      </div>
+    </>
   );
 };
 

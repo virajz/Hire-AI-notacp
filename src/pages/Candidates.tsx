@@ -69,7 +69,7 @@ const Candidates = () => {
         </div>
 
         <CandidateList
-          searchQuery=""
+          searchQuery={searchQuery}
           onViewCandidate={handleViewCandidate}
         />
       </div>

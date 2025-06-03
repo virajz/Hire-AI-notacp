@@ -4,6 +4,7 @@ import { Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { API_BASE_URL } from '@/config/environment';
+import { parseResumeText } from '@/integrations/gemini/resumeParser';
 
 const ResumeUploader = ({ onUploadComplete }: { onUploadComplete: (candidateData?: any) => void }) => {
   const [isUploading, setIsUploading] = useState(false);
@@ -32,9 +33,21 @@ const ResumeUploader = ({ onUploadComplete }: { onUploadComplete: (candidateData
       
       setProgressInterval(interval);
 
+      // First try parsing with Gemini
+      let extractedText = "";
+      try {
+        extractedText = await parseResumeText(file);
+        console.log("Gemini extracted text:", extractedText.substring(0, 200) + "...");
+      } catch (geminiError) {
+        console.warn("Gemini parsing failed, falling back to backend:", geminiError);
+      }
+
       // Prepare form data for file upload
       const formData = new FormData();
       formData.append('file', file);
+      if (extractedText) {
+        formData.append('extracted_text', extractedText);
+      }
       
       // Call the API endpoint to upload and process the resume
       const response = await axios.post(
@@ -85,7 +98,7 @@ const ResumeUploader = ({ onUploadComplete }: { onUploadComplete: (candidateData
       <Upload className="h-10 w-10 text-muted-foreground mb-4" />
       <h3 className="text-lg font-medium mb-2">Upload Resumes</h3>
       <p className="text-muted-foreground text-sm mb-4 text-center">
-        Drag and drop resume files (PDF) or click to browse
+        Drag and drop resume files (PDF, DOCX, or images) or click to browse
       </p>
 
       <div className="relative">
@@ -98,7 +111,7 @@ const ResumeUploader = ({ onUploadComplete }: { onUploadComplete: (candidateData
           <input
             type="file"
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            accept=".pdf"
+            accept=".pdf,.docx,image/*"
             onChange={handleFileChange}
             disabled={isUploading}
           />

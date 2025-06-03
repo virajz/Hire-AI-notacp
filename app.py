@@ -2,7 +2,7 @@ import os
 import base64
 import tempfile
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Query, File, UploadFile, Form
+from fastapi import FastAPI, HTTPException, Query, File, UploadFile, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -12,6 +12,12 @@ import PyPDF2
 import re
 import hashlib
 import socket
+import fitz  # PyMuPDF (for PDF parsing)
+import mammoth  # For DOCX parsing (better than python-docx for text extraction)
+from pyresparser import ResumeParser
+
+# Import robust parser
+from backend.routers.resume_parser import extract_fields
 
 # Load environment variables
 load_dotenv()
@@ -20,6 +26,7 @@ load_dotenv()
 SUPABASE_URL = os.getenv("VITE_SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("VITE_SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY") # Add Groq API Key for summaries
 
 # Check for required environment variables
 if not all([SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY]):
@@ -71,6 +78,9 @@ class ResumeUploadResponse(BaseModel):
     years_exp: Optional[float] = None
     message: str = "Resume uploaded and processed successfully"
 
+class AISummaryResponse(BaseModel):
+    ai_summary: str
+
 # Common skills list for keyword extraction
 COMMON_SKILLS = [
     'JavaScript', 'TypeScript', 'React', 'Angular', 'Vue', 'Node.js', 
@@ -87,418 +97,394 @@ COMMON_SKILLS = [
 def extract_text_from_pdf(pdf_bytes):
     """Extract text from a PDF file byte stream."""
     try:
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(pdf_bytes)
-            temp_file_path = temp_file.name
-        
-        text = ""
-        with open(temp_file_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            for page_num in range(len(pdf_reader.pages)):
-                text += pdf_reader.pages[page_num].extract_text()
-        
-        # Clean up temp file
-        os.unlink(temp_file_path)
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        text = "\n".join(page.get_text() for page in doc)
+        if text.strip():
+            return text
+    except Exception:
+        pass
+    return ""
+
+def extract_text_from_docx(file_bytes: bytes) -> str:
+    try:
+        # Use mammoth to extract text from DOCX
+        result = mammoth.extract_raw_text(file_bytes)
+        text = result.value
         return text
-    except Exception as e:
-        print(f"Error extracting text from PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error extracting text from PDF: {str(e)}")
+    except Exception:
+        return ""
 
-def extract_basic_info(text):
-    """Extract basic information from resume text using regex patterns."""
-    # Initialize with default values
-    info = {
-        "name": "",
-        "email": "",
-        "location": "",
-        "skills": [],
-        "years_exp": 0,
-        "current_title": ""
-    }
-    
-    # Extract name (usually one of the first lines of the resume)
-    name_lines = text.split('\n')[:5]
-    for line in name_lines:
-        line = line.strip()
-        if 3 < len(line) < 30 and '@' not in line and ':' not in line and not re.match(r'^\d', line):
-            info["name"] = line
-            break
-    
-    # Extract email
-    email_match = re.search(r'([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)', text)
-    if email_match:
-        info["email"] = email_match.group(1)
-    
-    # Extract location
-    location_keywords = ['Location:', 'Address:', 'City:', 'Based in', 'residing in']
-    lines = text.split('\n')
-    for line in lines:
-        lower = line.lower()
-        for kw in location_keywords:
-            if kw.lower() in lower:
-                index = lower.find(kw.lower())
-                location = line[index + len(kw):].strip()
-                if location.startswith(':'):
-                    location = location[1:].strip()
-                info["location"] = location
-                break
-    
-    # Extract skills
-    for skill in COMMON_SKILLS:
-        skill_pattern = r'\b' + re.escape(skill) + r'\b'
-        if re.search(skill_pattern, text, re.IGNORECASE):
-            info["skills"].append(skill)
-    
-    # Extract years of experience
-    exp_match = re.search(r'(\d+)[\+]?\s+(years|year)(\s+of)?\s+experience', text, re.IGNORECASE)
-    if exp_match and len(exp_match.groups()) >= 1:
-        info["years_exp"] = int(exp_match.group(1))
-    else:
-        # Try to calculate from dates
-        year_ranges = re.findall(r'20\d{2}\s*[-–—]\s*(20\d{2}|present|current)', text, re.IGNORECASE)
-        total_years = 0
-        for range_str in year_ranges:
-            if isinstance(range_str, tuple) and len(range_str) > 0:
-                range_str = range_str[0]  # Handle the case where re.findall returns tuples
-            
-            parts = re.split(r'[-–—]', range_str)
-            if len(parts) == 2:
-                start_match = re.search(r'20\d{2}', parts[0])
-                if not start_match:
-                    continue
-                    
-                start_year = int(start_match.group(0))
-                
-                if 'present' in parts[1].lower() or 'current' in parts[1].lower():
-                    end_year = 2024  # Current year
-                else:
-                    end_match = re.search(r'20\d{2}', parts[1])
-                    if not end_match:
-                        continue
-                    end_year = int(end_match.group(0))
-                
-                total_years += (end_year - start_year)
-        
-        if total_years > 0:
-            info["years_exp"] = total_years
-    
-    # Extract current title - Fixed regex patterns with consistent capture groups
-    title_indicators = [
-        r'current(ly)?:?\s*(.*?)(?:$|,|\.|;)',
-        r'present:?\s*(.*?)(?:$|,|\.|;)',
-        r'job title:?\s*(.*?)(?:$|,|\.|;)',
-        r'position:?\s*(.*?)(?:$|,|\.|;)',
-        r'title:?\s*(.*?)(?:$|,|\.|;)',
-        r'role:?\s*(.*?)(?:$|,|\.|;)'
-    ]
-    
-    for pattern in title_indicators:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match and len(match.groups()) >= 1:
-            title = match.group(1)
-            if title and title.strip():
-                info["current_title"] = title.strip()
-                break
-    
-    if not info["current_title"]:
-        job_titles = [
-            'Software Engineer', 'Software Developer', 'Full Stack', 'Frontend', 
-            'Backend', 'DevOps', 'Data Scientist', 'Data Engineer', 'Product Manager',
-            'Project Manager', 'Engineering Manager', 'CTO', 'VP', 'Director', 
-            'Lead', 'Architect', 'Designer'
-        ]
-        
-        for line in lines:
-            if any(title in line for title in job_titles) and re.search(r'20(1[5-9]|2[0-9])', line):
-                info["current_title"] = line.strip()
-                break
-    
-    return info
-
-# Alternative simple embedding function that doesn't require ML libraries
-def generate_simple_embedding(text: str, dim: int = 384) -> List[float]:
-    """
-    Generate a simple embedding based on keyword frequencies.
-    This is a simplified alternative to ML-based embeddings.
-    """
-    # Create a deterministic hash from the text
-    text_hash = hashlib.md5(text.encode()).hexdigest()
-    
-    # Convert the hash to a list of floats
-    hash_bytes = bytes.fromhex(text_hash)
-    
-    # Generate a fixed dimension embedding by repeating and truncating the hash
-    embedding = []
-    while len(embedding) < dim:
-        for b in hash_bytes:
-            # Convert to a float between -1 and 1
-            value = (b / 127.5) - 1.0
-            embedding.append(value)
-            if len(embedding) >= dim:
-                break
-    
-    return embedding[:dim]
-
-# Function to insert data directly into Supabase
-async def insert_into_supabase(table: str, data: Dict[str, Any]):
-    """Insert data directly into a Supabase table using httpx."""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{SUPABASE_URL}/rest/v1/{table}",
-                headers={
-                    "apikey": SUPABASE_ANON_KEY,
-                    "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-                    "Content-Type": "application/json",
-                    "Prefer": "return=representation"
-                },
-                json=data,
-                timeout=30.0
-            )
-            
-            if response.status_code != 201:
-                print(f"Supabase insert error: {response.status_code} {response.text}")
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Database error: {response.text}"
-                )
-            
-            return response.json()
-    except httpx.HTTPError as e:
-        print(f"HTTP error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
-
-# Function to upload file to Supabase Storage
-async def upload_to_supabase_storage(bucket: str, path: str, file_content: bytes):
-    """Upload a file to Supabase Storage."""
-    try:
-        # Determine content type based on file extension
-        content_type = "application/pdf"  # default to PDF
-        if path.lower().endswith('.doc'):
-            content_type = "application/msword"
-        elif path.lower().endswith('.docx'):
-            content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{SUPABASE_URL}/storage/v1/object/{bucket}/{path}",
-                headers={
+@app.post("/api/resume/parse_from_bucket")
+async def parse_resumes_from_bucket(filenames: list[str] = Body(...)):
+    SUPABASE_URL = os.getenv("VITE_SUPABASE_URL")
+    SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+    bucket = "candidate-resumes"
+    parsed_results = []
+    import httpx
+    for filename in filenames:
+        ext = filename.split(".")[-1].lower()
+        file_url = f"{SUPABASE_URL}/storage/v1/object/{bucket}/resumes/{filename}"
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(file_url, headers={
                     "apikey": SUPABASE_SERVICE_ROLE_KEY,
-                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-                    "Content-Type": content_type
-                },
-                content=file_content,
-                timeout=30.0
-            )
-            
-            if response.status_code != 200:
-                print(f"Supabase storage error: {response.status_code} {response.text}")
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Storage error: {response.text}"
-                )
-            
-            # Get public URL
-            public_url = f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}"
-            return public_url
-    except httpx.HTTPError as e:
-        print(f"HTTP error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}"
+                })
+                if resp.status_code != 200:
+                    parsed_results.append({"filename": filename, "error": f"Download failed: {resp.text}"})
+                    continue
+                file_bytes = resp.content
+        except Exception as e:
+            parsed_results.append({"filename": filename, "error": str(e)})
+            continue
+        try:
+            fields = None
+            if ext == "pdf":
+                # Try pyresparser first
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                    tmp_file.write(file_bytes)
+                    tmp_path = tmp_file.name
+                try:
+                    parser = ResumeParser(tmp_path)
+                    parsed_data = parser.get_extracted_data()
+                    # If pyresparser returns at least a name or email, use it
+                    if parsed_data and (parsed_data.get("name") or parsed_data.get("email")):
+                        fields = parsed_data
+                    else:
+                        fields = None
+                except Exception as e:
+                    fields = None
+                finally:
+                    os.remove(tmp_path)
+                # Fallback to PyMuPDF/pdfplumber logic if pyresparser fails
+                if not fields:
+                    text = extract_text_from_pdf(file_bytes)
+                    if not text.strip():
+                        parsed_results.append({"filename": filename, "error": "No extractable text found"})
+                        continue
+                    fields = extract_fields(text)
+            elif ext in ("doc", "docx"):
+                text = extract_text_from_docx(file_bytes)
+                if not text.strip():
+                    parsed_results.append({"filename": filename, "error": "No extractable text found"})
+                    continue
+                fields = extract_fields(text)
+            else:
+                parsed_results.append({"filename": filename, "error": "Unsupported file type"})
+                continue
+            parsed_results.append({"filename": filename, "fields": fields})
+        except Exception as e:
+            parsed_results.append({"filename": filename, "error": str(e)})
+    return parsed_results
 
-# Function to call Supabase RPC directly
-async def call_supabase_rpc(function_name: str, params: Dict[str, Any]):
-    """Call a Supabase RPC function directly using httpx."""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{SUPABASE_URL}/rest/v1/rpc/{function_name}",
-                headers={
-                    "apikey": SUPABASE_ANON_KEY,
-                    "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-                    "Content-Type": "application/json",
-                    "Prefer": "return=representation"
-                },
-                json=params,
-                timeout=30.0
-            )
-            
-            if response.status_code != 200:
-                print(f"Supabase RPC error: {response.status_code} {response.text}")
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Database error: {response.text}"
-                )
-            
-            return response.json()
-    except httpx.HTTPError as e:
-        print(f"HTTP error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"HTTP error: {str(e)}")
-
-# Search endpoint
-@app.get("/api/search", response_model=SearchResponse)
-async def search(query: str = Query(..., description="Search query for candidate matching")):
-    """
-    Search for candidates based on a natural language query.
-    The query will be converted to an embedding and matched against candidate embeddings in the database.
-    If no results are found, fallback to a direct text search on name, skills, and raw_text.
-    """
-    if not query or query.strip() == "":
-        raise HTTPException(
-            status_code=400, 
-            detail="Search query is required and must be a non-empty string."
-        )
-    
-    try:
-        print(f'Generating embedding for query: "{query}"')
-        # Generate a simplified embedding
-        query_embedding = generate_simple_embedding(query)
-        print(f'Successfully generated embedding for query: "{query}"')
-        print('Searching for candidates in Supabase...')
-        # Call match_candidates RPC function
-        candidates = await call_supabase_rpc(
-            'match_candidates',
-            {
-                "query_embedding": query_embedding,
-                "match_threshold": 0.1,
-                "match_count": 10,
-            }
-        )
-        if candidates and len(candidates) > 0:
-            print(f'Found {len(candidates)} candidates for query: "{query}"')
-            return SearchResponse(candidates=candidates)
-        # Fallback: direct text search
-        print('No candidates found with vector search, falling back to text search...')
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{SUPABASE_URL}/rest/v1/candidates",
-                headers={
-                    "apikey": SUPABASE_ANON_KEY,
-                    "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-                },
-                params={
-                    "or": f"name.ilike.*{query}*,skills.cs.{{{query}}},raw_text.ilike.*{query}*",
-                    "limit": 10
-                },
-                timeout=30.0
-            )
-            if response.status_code != 200:
-                print(f"Supabase fallback text search error: {response.status_code} {response.text}")
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Database error: {response.text}"
-                )
-            text_candidates = response.json()
-            # Add a dummy similarity score for UI compatibility
-            for c in text_candidates:
-                c["similarity"] = 1.0
-            if not text_candidates:
-                return SearchResponse(message="No candidates found matching your query.", candidates=[])
-            print(f'Found {len(text_candidates)} candidates with fallback text search.')
-            return SearchResponse(candidates=text_candidates)
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"API error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Resume upload endpoint
 @app.post("/api/resume/upload", response_model=ResumeUploadResponse)
 async def upload_resume(
-    file: UploadFile = File(..., description="Resume file (PDF, DOC, DOCX)")
+    file: UploadFile = File(...),
+    extracted_text: str = Form(None)
 ):
-    """
-    Upload and parse a resume file.
-    The file will be processed to extract candidate information, stored in Supabase,
-    and embeddings will be generated for similarity search.
-    """
-    if not file:
-        raise HTTPException(
-            status_code=400,
-            detail="Resume file is required."
-        )
-    
-    # Check file type
-    filename = file.filename.lower()
-    if not (filename.endswith('.pdf') or filename.endswith('.doc') or filename.endswith('.docx')):
-        raise HTTPException(
-            status_code=400,
-            detail="Only PDF, DOC, and DOCX files are supported."
-        )
-    
     try:
-        print(f"Processing resume file: {filename}")
-        
+        print(f"Processing file: {file.filename}")
         # Read file content
-        file_content = await file.read()
+        file_bytes = await file.read()
         
-        # For now, we only support PDF parsing
-        if filename.endswith('.pdf'):
-            # Extract text from PDF
-            resume_text = extract_text_from_pdf(file_content)
-        else:
-            # We would need additional libraries for DOC/DOCX
-            # For the MVP, we'll return an error
-            raise HTTPException(
-                status_code=400,
-                detail="Only PDF files are supported in the current version."
-            )
+        # Generate a unique filename
+        file_hash = hashlib.md5(file_bytes).hexdigest()
+        filename = f"{file_hash}.{file.filename.split('.')[-1]}"
+        print(f"Generated filename: {filename}")
         
-        if not resume_text or len(resume_text.strip()) < 100:
-            raise HTTPException(
-                status_code=400,
-                detail="Could not extract meaningful text from the resume. Please check the file."
-            )
-        
-        # Parse resume text to extract basic information
-        candidate_info = extract_basic_info(resume_text)
-        
-        # Generate a unique filename for storage
-        import uuid
-        unique_filename = f"{uuid.uuid4()}{os.path.splitext(filename)[1]}"
-        file_path = f"resumes/{unique_filename}"
-        
-        # Upload file to Supabase Storage
-        resume_url = await upload_to_supabase_storage("candidate-resumes", file_path, file_content)
-        
-        # Generate embeddings for the resume text using the simpler approach
-        embedding = generate_simple_embedding(resume_text)
-        
-        # Prepare candidate data for database insertion
-        candidate_data = {
-            "name": candidate_info["name"],
-            "email": candidate_info.get("email", ""),
-            "current_title": candidate_info.get("current_title", "Unknown Position"),
-            "location": candidate_info.get("location", "Unknown Location"),
-            "work_auth": "Unknown",  # We need more sophisticated parsing for this
-            "years_exp": candidate_info.get("years_exp", 0),
-            "skills": candidate_info.get("skills", []),
-            "resume_url": resume_url,
-            "raw_text": resume_text,
-            "embedding": embedding
+        # Store in Supabase
+        bucket_path = f"resumes/{filename}"
+        headers = {
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}"
         }
         
-        # Insert candidate data into Supabase
-        inserted_data = await insert_into_supabase("candidates", candidate_data)
+        # Upload to Supabase Storage
+        upload_url = f"{SUPABASE_URL}/storage/v1/object/candidate-resumes/{bucket_path}"
         
-        # Prepare response
-        response = ResumeUploadResponse(
-            candidate_id=inserted_data[0]["id"],
-            name=candidate_info["name"],
-            email=candidate_info.get("email", ""),
-            current_title=candidate_info.get("current_title", ""),
-            location=candidate_info.get("location", ""),
-            skills=candidate_info.get("skills", []),
-            years_exp=candidate_info.get("years_exp", 0),
-            message="Resume uploaded and processed successfully"
+        # Set the correct Content-Type based on file extension
+        content_type = "application/pdf" if file.filename.lower().endswith('.pdf') else \
+                      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if file.filename.lower().endswith('.docx') else \
+                      "application/msword" if file.filename.lower().endswith('.doc') else \
+                      "application/octet-stream"
+        
+        headers["Content-Type"] = content_type
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                upload_url,
+                content=file_bytes,
+                headers=headers
+            )
+            
+            if response.status_code != 200:
+                print(f"Supabase upload failed: {response.text}")
+                #raise HTTPException(status_code=500, detail=f"Failed to upload file to storage: {response.text}")
+
+        # Use pre-extracted text from Gemini if available
+        text = None
+        if extracted_text:
+            print("Using pre-extracted text from Gemini")
+            text = extracted_text
+        else:
+            # Extract text based on file type
+            if file.filename.lower().endswith('.pdf'):
+                print("Extracting text from PDF")
+                try:
+                    text = extract_text_from_pdf(file_bytes)
+                    print(f"Extracted text length: {len(text) if text else 0}")
+                except Exception as e:
+                    print(f"PDF extraction error: {str(e)}")
+                    raise HTTPException(status_code=500, detail=f"Error extracting text from PDF: {str(e)}")
+            elif file.filename.lower().endswith(('.doc', '.docx')):
+                print("Extracting text from DOCX")
+                try:
+                    text = extract_text_from_docx(file_bytes)
+                    print(f"Extracted text length: {len(text) if text else 0}")
+                except Exception as e:
+                    print(f"DOCX extraction error: {str(e)}")
+                    raise HTTPException(status_code=500, detail=f"Error extracting text from DOCX: {str(e)}")
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported file type. Please upload PDF or DOCX files only.")
+        
+        if not text:
+            raise HTTPException(status_code=422, detail="Could not extract text from resume")
+        
+        # Parse resume text using the extract_fields function
+        print("Parsing extracted text")
+        try:
+            # from backend.routers.resume_parser import extract_fields # Already imported at the top
+            parsed_fields = extract_fields(text) if text else {}
+            print(f"Initial Parsed fields: {parsed_fields}") # Log initial parse
+        except Exception as e:
+            print(f"Resume parsing error: {str(e)}")
+            # Fallback to empty dict if parsing fails, to allow default values to be set
+            parsed_fields = {}
+            # raise HTTPException(status_code=500, detail=f"Error parsing resume text: {str(e)}") # Optionally re-raise
+        
+        # Fallback if primary parsing yields no useful data (e.g., name is missing)
+        if not parsed_fields.get("name"):
+            name_from_filename = os.path.splitext(file.filename)[0] if file.filename else "Unknown Candidate"
+            # Preserve any fields that might have been parsed, even if name was missing
+            parsed_fields = {
+                "name": parsed_fields.get("name") or name_from_filename,
+                "email": parsed_fields.get("email"),
+                "current_title": parsed_fields.get("current_title"),
+                "location": parsed_fields.get("location"),
+                "hard_skills": parsed_fields.get("hard_skills", []),
+                "years_exp": parsed_fields.get("years_exp"),
+            }
+            print(f"Refined/Fallback parsed_fields: {parsed_fields}")
+
+        # Prepare candidate data for database insertion
+        # Explicitly handle current_title to ensure it's never None or empty if the column is NOT NULL
+        current_title_val = parsed_fields.get("current_title")
+        if current_title_val is None or str(current_title_val).strip() == "":
+            current_title_to_insert = "Not specified"
+        else:
+            current_title_to_insert = str(current_title_val).strip()
+
+        # Explicitly handle location to ensure it's never None or empty if the column is NOT NULL
+        location_val = parsed_fields.get("location")
+        if location_val is None or str(location_val).strip() == "":
+            location_to_insert = "Not specified"
+        else:
+            location_to_insert = str(location_val).strip()
+
+        # Handle years_exp carefully
+        years_exp_val = parsed_fields.get("years_exp")
+        years_exp_to_insert = None # Default to None if nullable in DB
+        if years_exp_val is not None and str(years_exp_val).strip() != "":
+            try:
+                years_exp_to_insert = float(str(years_exp_val).strip())
+            except ValueError:
+                print(f"Could not convert years_exp '{years_exp_val}' to float. Setting to None.")
+                # If years_exp is NOT NULL in DB, you might want to default to 0 here:
+                # years_exp_to_insert = 0 
+        # else: # If years_exp is NOT NULL and must have a value
+            # years_exp_to_insert = 0 
+
+        MAX_RAW_TEXT_LENGTH = 20000 # Define if not already defined globally
+
+        candidate_data_to_insert = {
+            "name": parsed_fields.get("name"),
+            "email": parsed_fields.get("email"),
+            "current_title": current_title_to_insert,
+            "location": location_to_insert, # Use the explicitly handled value
+            "skills": parsed_fields.get("hard_skills", []),
+            "years_exp": years_exp_to_insert,
+            "resume_url": f"{SUPABASE_URL}/storage/v1/object/public/candidate-resumes/{bucket_path}", # Assuming public bucket
+            "raw_text": text[:MAX_RAW_TEXT_LENGTH] if text else None
+        }
+        
+        # This line, if active, removes keys where the value is None.
+        # candidate_data_to_insert = {k: v for k, v in candidate_data_to_insert.items() if v is not None}
+        # For now, let Supabase handle nulls for nullable columns.
+
+        print(f"Data to insert into DB: {json.dumps(candidate_data_to_insert, indent=2)}") # Log data before DB insert
+
+        # Insert into Supabase 'candidates' table
+        db_insert_url = f"{SUPABASE_URL}/rest/v1/candidates"
+        db_headers = {
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation"  # To get the inserted row back
+        }
+        
+        inserted_candidate_id_from_db = None
+        async with httpx.AsyncClient() as client:
+            try:
+                db_response = await client.post(
+                    db_insert_url,
+                    json=candidate_data_to_insert,
+                    headers=db_headers
+                )
+                db_response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+                
+                if db_response.status_code == 201:  # HTTP 201 Created
+                    inserted_data = db_response.json()
+                    if inserted_data and len(inserted_data) > 0:
+                        inserted_candidate_id_from_db = inserted_data[0].get("id")
+                    print(f"Successfully inserted candidate into DB. DB ID: {inserted_candidate_id_from_db}")
+                else:
+                    print(f"Failed to insert candidate into DB (Status: {db_response.status_code}): {db_response.text}")
+                    # Not raising an error here, will return filename as candidate_id as fallback
+
+            except httpx.HTTPStatusError as e:
+                print(f"HTTP error inserting candidate into DB: {e.response.status_code} - {e.response.text}")
+            except Exception as e:
+                print(f"Generic error inserting candidate into DB: {str(e)}")
+
+        # Return parsed information
+        return ResumeUploadResponse(
+            candidate_id=str(inserted_candidate_id_from_db) if inserted_candidate_id_from_db else filename, # Prefer DB ID
+            name=parsed_fields.get("name", ""),
+            email=parsed_fields.get("email", ""),
+            current_title=parsed_fields.get("current_title", ""),
+            location=parsed_fields.get("location", ""),
+            skills=parsed_fields.get("hard_skills", []),
+            years_exp=float(parsed_fields.get("years_exp")) if parsed_fields.get("years_exp") else None,
         )
         
-        return response
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"Resume upload error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing resume: {str(e)}")
+
+async def generate_text_summary_with_groq(text_to_summarize: str) -> Optional[str]:
+    if not GROQ_API_KEY:
+        print("GROQ_API_KEY not configured for backend summary generation.")
+        return None
+    
+    groq_api_url = "https://api.groq.com/openai/v1/chat/completions"
+    
+    # Limit input text length to avoid exceeding model context or API limits
+    # Llama3-8b has an 8192 token context, but keep input reasonable for a summary task.
+    # Approx 4 chars per token, so 4000 chars is ~1000 tokens.
+    max_input_chars = 6000 # Increased slightly for potentially longer relevant sections
+    truncated_text = text_to_summarize[:max_input_chars]
+
+    prompt = f"Summarize the following resume text, focusing on key skills, experience, and overall fit. Provide a concise summary suitable for a recruiter (around 100-150 words): \n\n{truncated_text}"
+    
+    payload = {
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "model": "llama3-8b-8192", # Common Groq model, adjust if needed
+        "temperature": 0.5,
+        "max_tokens": 250, # Max tokens for the summary output
+        "top_p": 1,
+        "stop": None,
+        "stream": False
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(groq_api_url, json=payload, headers=headers)
+            response.raise_for_status() # Raise an exception for HTTP errors
+            result = response.json()
+            
+            if result.get("choices") and len(result["choices"]) > 0:
+                summary = result["choices"][0].get("message", {}).get("content")
+                if summary:
+                    return summary.strip()
+                else:
+                    print(f"Groq API response missing summary content: {result}")
+                    return None
+            else:
+                print(f"Unexpected Groq API response structure: {result}")
+                return None
+        except httpx.HTTPStatusError as e:
+            print(f"Groq API HTTP error: {e.response.status_code} - {e.response.text}")
+            return None
+        except Exception as e:
+            print(f"Error calling Groq API: {str(e)}")
+            return None
+
+@app.post("/api/candidate/{candidate_id}/generate_summary", response_model=AISummaryResponse)
+async def generate_ai_summary(candidate_id: str):
+    # 1. Fetch raw_text from Supabase
+    fetch_url = f"{SUPABASE_URL}/rest/v1/candidates?id=eq.{candidate_id}&select=raw_text"
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}"
+    }
+    raw_text = None
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(fetch_url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            if data and len(data) > 0 and data[0].get("raw_text"):
+                raw_text = data[0]["raw_text"]
+            else:
+                raise HTTPException(status_code=404, detail="Candidate or raw text not found")
+        except httpx.HTTPStatusError as e:
+            print(f"Error fetching raw_text: {e.response.status_code} - {e.response.text}")
+            raise HTTPException(status_code=e.response.status_code, detail="Failed to fetch candidate data")
+        except Exception as e:
+            print(f"Generic error fetching raw_text: {str(e)}")
+            raise HTTPException(status_code=500, detail="Server error fetching candidate data")
+
+    if not raw_text:
+        raise HTTPException(status_code=404, detail="Raw text not found for candidate")
+
+    # 2. Generate summary with Groq
+    generated_summary = await generate_text_summary_with_groq(raw_text)
+    if not generated_summary:
+        raise HTTPException(status_code=500, detail="Failed to generate AI summary using Groq") # Updated error message
+
+    # 3. Update ai_summary in Supabase
+    update_url = f"{SUPABASE_URL}/rest/v1/candidates?id=eq.{candidate_id}"
+    update_payload = {"ai_summary": generated_summary}
+    db_headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal" # Or "representation" if you want the updated row back
+    }
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.patch(update_url, json=update_payload, headers=db_headers)
+            response.raise_for_status()
+            print(f"Successfully updated ai_summary for candidate {candidate_id}")
+        except httpx.HTTPStatusError as e:
+            print(f"Error updating ai_summary: {e.response.status_code} - {e.response.text}")
+            # Not raising HTTPException here, as summary was generated, but DB update failed.
+            # Frontend will still get the summary, but it won't be persisted if this fails.
+            # Consider how to handle this - maybe return summary but with a warning.
+        except Exception as e:
+            print(f"Generic error updating ai_summary: {str(e)}")
+
+    return AISummaryResponse(ai_summary=generated_summary)
 
 if __name__ == "__main__":
     import uvicorn
@@ -517,4 +503,4 @@ if __name__ == "__main__":
     default_port = int(os.getenv("PORT", "3001"))
     port = find_available_port(default_port)
     print(f"Starting server on port {port}")
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True) 
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)

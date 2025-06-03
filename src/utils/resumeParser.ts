@@ -1,5 +1,5 @@
-import { extractTextFromPdf } from './pdfUtils';
 import { generateEmbeddings, generateCandidateSummary } from '@/integrations/groq/client';
+import { parseResumeText } from '@/integrations/gemini/client';
 import { uploadResumeFile, storeCandidateData } from './storageUtils';
 
 /**
@@ -196,10 +196,10 @@ export const extractCurrentTitle = (text: string): string | null => {
  */
 export const parseResume = async (file: File) => {
   try {
-    // Extract text from PDF
-    const text = await extractTextFromPdf(file);
+    // Extract text using Gemini
+    const text = await parseResumeText(file);
     
-    // Use classical parsing approach first
+    // Use classical parsing approach
     const basicInfo = extractBasicInfo(text);
     const currentTitle = extractCurrentTitle(text);
     

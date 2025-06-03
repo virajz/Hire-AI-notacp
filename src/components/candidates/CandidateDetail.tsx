@@ -3,9 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Star, Mail, Download, Calendar, MapPin, Briefcase } from "lucide-react";
-import { mockCandidates } from "@/data/mockData";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import EmailComposer from "../email/EmailComposer";
+import { supabase } from "@/integrations/supabase/client";
 
 interface CandidateDetailProps {
   candidateId: string | null;
@@ -14,17 +14,166 @@ interface CandidateDetailProps {
   onStatusChange?: (id: string, status: string) => void;
 }
 
+// Define a more comprehensive type for detailed candidate view
+interface DetailedCandidate {
+  id: string;
+  name: string;
+  currentTitle: string;
+  location: string;
+  workAuth: string; // Made required
+  yearsExp: number; // Made required
+  skills: string[]; // Will default to empty array
+  shortlisted: boolean; // Will default to false
+  status: 'new' | 'contacted' | 'interested' | 'interviewing'; // Made required, will default to 'new'
+  aiSummary?: string; // Will default to undefined or empty string
+  achievements: string[]; // Will default to empty array
+  // Add other fields like resume_url if needed for download
+}
+
 const CandidateDetail = ({ candidateId, open, onClose, onStatusChange }: CandidateDetailProps) => {
   const [showingEmail, setShowingEmail] = useState(false);
+  const [candidate, setCandidate] = useState<DetailedCandidate | null>(null);
+  const [loading, setLoading] = useState(false); // For initial candidate load
+  const [error, setError] = useState<string | null>(null); // For initial candidate load
+
+  // State for AI Summary generation
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (candidateId && open) {
+      const fetchCandidateDetails = async () => {
+        setLoading(true);
+        setError(null);
+        setCandidate(null); // Clear previous candidate
+        try {
+          const { data, error: supabaseError } = await supabase
+            .from('candidates')
+            .select('*') // Reverted to select('*') to fetch all existing columns
+            .eq('id', candidateId)
+            .single();
+
+          if (supabaseError) {
+            // If the error is specifically about a column not existing, it might be suppressed here
+            // or handled, but for now, we let it throw to be caught below.
+            throw supabaseError;
+          }
+
+          console.log("Fetched candidate data in modal:", data); // Log the fetched data
+
+          if (data) {
+            // Map Supabase data to DetailedCandidate structure
+            setCandidate({
+              id: data.id,
+              name: data.name,
+              currentTitle: data.current_title,
+              location: data.location,
+              workAuth: data.work_auth || "N/A",
+              yearsExp: data.years_exp || 0,
+              // Use fetched data for these fields, with fallbacks
+              skills: data['skills'] || [], 
+              shortlisted: data['shortlisted'] || false,
+              status: (data['status'] || 'new') as DetailedCandidate['status'],
+              aiSummary: data['ai_summary'] || undefined, 
+              achievements: data['achievements'] || [],
+            });
+          } else {
+            setError("Candidate not found.");
+          }
+        } catch (err: any) {
+          console.error("Error fetching candidate details:", err);
+          setError(err.message || "Failed to fetch candidate details.");
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchCandidateDetails();
+    } else if (!open) {
+      // Reset when dialog is closed
+      setCandidate(null);
+      setShowingEmail(false);
+      setError(null);
+      setIsGeneratingSummary(false); // Reset summary generation state
+      setSummaryError(null);      // Reset summary error state
+    }
+  }, [candidateId, open]);
+
+  const handleGenerateSummary = async () => {
+    if (!candidate) return;
+    setIsGeneratingSummary(true);
+    setSummaryError(null);
+    try {
+      const response = await fetch(`/api/candidate/${candidate.id}/generate_summary`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        let errorDetail = "Failed to generate summary"; // Default message
+        try {
+          // Attempt to parse JSON error response from backend
+          const errorData = await response.json();
+          if (errorData && errorData.detail) {
+            errorDetail = errorData.detail;
+          } else {
+            // If no JSON or no detail field, use status text
+            errorDetail = `Server error: ${response.status} ${response.statusText}`;
+          }
+        } catch (jsonError) {
+          // If response.json() itself fails (e.g., HTML error page instead of JSON)
+          errorDetail = `Server error: ${response.status} ${response.statusText}. Could not parse error response.`;
+        }
+        throw new Error(errorDetail);
+      }
+      const result = await response.json();
+      setCandidate(prevCandidate => prevCandidate ? { ...prevCandidate, aiSummary: result.ai_summary } : null);
+    } catch (err: any) {
+      console.error("Error generating AI summary:", err);
+      setSummaryError(err.message || "An error occurred while generating the summary.");
+    }
+    setIsGeneratingSummary(false);
+  };
+
+  if (!open) { // Keep dialog unrendered if not open, useEffect handles cleanup
+    return null;
+  }
+
+  // Handle loading and error states for the fetched data
+  if (loading) {
+    return (
+      <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Loading Candidate...</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">Loading details...</div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  if (error && !candidate) { // Show error if fetching failed and no candidate data
+     return (
+      <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Error</DialogTitle>
+          </DialogHeader>
+          <div className="py-4 text-red-600">{error}</div>
+           <div className="flex justify-end mt-4">
+            <Button variant="outline" onClick={onClose}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
   
-  // Find the candidate in our mock data
-  const candidate = mockCandidates.find((c) => c.id === candidateId);
-  
-  if (!candidate) {
+  if (!candidate) { // If not loading, no error, but still no candidate (e.g. after closing), render nothing until open triggers fetch
     return null;
   }
   
-  const handleEmail = () => {
+  // Log candidate.skills at render time
+  console.log("Rendering CandidateDetail, candidate.skills:", candidate.skills);
+
+  const handleEmailClick = () => { // Renamed from handleEmail to avoid conflict if any
     setShowingEmail(true);
   };
   
@@ -82,7 +231,7 @@ const CandidateDetail = ({ candidateId, open, onClose, onStatusChange }: Candida
               <div>
                 <h4 className="text-sm font-medium mb-1">Skills</h4>
                 <div className="flex flex-wrap gap-1">
-                  {candidate.skills.map((skill) => (
+                  {candidate.skills?.map((skill) => (
                     <Badge key={skill} variant="secondary">
                       {skill}
                     </Badge>
@@ -100,17 +249,30 @@ const CandidateDetail = ({ candidateId, open, onClose, onStatusChange }: Candida
                 <TabsContent value="summary" className="space-y-3">
                   <div className="bg-muted/50 p-3 rounded-md text-sm">
                     <h4 className="font-medium mb-1">Why They Fit</h4>
-                    <p>{candidate.aiSummary}</p>
+                    {isGeneratingSummary ? (
+                      <p>Generating AI summary...</p>
+                    ) : summaryError ? (
+                      <p className="text-red-600">Error: {summaryError}</p>
+                    ) : candidate.aiSummary ? (
+                      <p>{candidate.aiSummary}</p>
+                    ) : (
+                      <div className="text-center py-2">
+                        <p className="text-muted-foreground mb-2">No AI summary available.</p>
+                        <Button onClick={handleGenerateSummary} size="sm" variant="outline" disabled={isGeneratingSummary}>
+                          Generate AI Summary
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   
-                  <div>
+                  {/* <div>
                     <h4 className="text-sm font-medium mb-1">Key Achievements</h4>
                     <ul className="list-disc list-inside text-sm space-y-1">
                       {candidate.achievements?.map((achievement, i) => (
                         <li key={i}>{achievement}</li>
-                      ))}
+                      )) || <li>No achievements listed.</li>}
                     </ul>
-                  </div>
+                  </div> */}
                 </TabsContent>
                 
                 <TabsContent value="resume">
@@ -142,7 +304,7 @@ const CandidateDetail = ({ candidateId, open, onClose, onStatusChange }: Candida
               <Button variant="outline" onClick={onClose}>
                 Close
               </Button>
-              <Button onClick={handleEmail} className="bg-highlight hover:bg-highlight/90 text-white">
+              <Button onClick={handleEmailClick} className="bg-highlight hover:bg-highlight/90 text-white">
                 <Mail className="h-4 w-4 mr-1" />
                 Send Email
               </Button>

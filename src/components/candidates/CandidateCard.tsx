@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -99,7 +98,7 @@ const CandidateCard = ({
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between candidate-actions">
+      <div className="mt-4 flex items-center justify-between opacity-100 z-10">
         <div className="flex gap-2">
           <Button size="sm" variant="ghost" onClick={() => onView(id)}>
             View

@@ -98,12 +98,12 @@
   @apply transition-all duration-200 hover:shadow-md;
 }
 
-.candidate-card:hover .candidate-actions {
+/* .candidate-card:hover .candidate-actions {
   @apply opacity-100;
-}
+} */
 
 .candidate-actions {
-  @apply opacity-0 transition-opacity duration-200;
+  @apply opacity-100 transition-opacity duration-200;
 }
 
 .search-bar-container {
@@ -172,4 +172,20 @@
   background-size: 200% 100%;
   animation: skeleton-loading 1.5s infinite;
   border-radius: 4px;
+}
+
+/* Added from CandidateList.tsx to resolve styled-jsx warnings */
+@keyframes stackAndFan {
+  0% {
+    transform: scale(0.95) translateY(40px) rotate(-3deg);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0) rotate(0);
+    opacity: 1;
+  }
+}
+
+.animate-card-stack {
+  animation: stackAndFan 0.5s ease-out forwards;
 }

@@ -1,0 +1,22 @@
+John Smith
+123 Main St, San Francisco, CA
+john@example.com
+(555) 123-4567
+
+EXPERIENCE
+Senior Software Engineer - Tech Corp
+Jan 2020 - Present
+- Led development of microservices architecture
+- Implemented CI/CD pipelines
+
+Software Engineer - Start Up Inc
+Jan 2018 - Dec 2019
+- Full stack development using React and Node.js
+- Built RESTful APIs
+
+EDUCATION
+BS Computer Science - University of California
+2014 - 2018
+
+SKILLS
+JavaScript, TypeScript, Python, React, Node.js, AWS

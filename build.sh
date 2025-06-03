@@ -1,3 +1,6 @@
+echo "Build started from directory: $(pwd)"
+echo "Listing contents:"
+ls -la
 #!/usr/bin/env bash
 # Exit immediately if a command exits with a non-zero status.
 set -e

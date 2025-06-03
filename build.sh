@@ -26,5 +26,4 @@ echo "Python dependencies installed."
 echo "Running Python script to download NLTK data (download_nltk_data.py)..."
 python download_nltk_data.py
 echo "NLTK data download script finished."
-
 echo "Build process complete."
